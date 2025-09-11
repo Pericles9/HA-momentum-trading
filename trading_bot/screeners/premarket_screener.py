@@ -1,7 +1,4 @@
-"""
-Premarket screener using Selenium to scrape Nasdaq pre-market movers.
-Returns a list of tickers for the top N pre-market stocks.
-"""
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -9,7 +6,7 @@ from selenium.webdriver.common.by import By
 import pandas as pd
 import time
 
-def get_top_premarket_tickers(chromedriver_path, num_rows=3, headless=True):
+def get_top_premarket_tickers(chromedriver_path, num_rows=10, headless=True):
     """
     Launches a Selenium Chrome browser, navigates to the Nasdaq pre-market screener,
     clicks the 'Most Advanced' button, scrapes the top N rows of the table, and returns a list of tickers.
@@ -20,45 +17,50 @@ def get_top_premarket_tickers(chromedriver_path, num_rows=3, headless=True):
     Returns:
         List[str]: List of ticker symbols from the first cell of each row.
     """
+    # Set up Chrome options
     chrome_options = Options()
     if headless:
         chrome_options.add_argument("--headless")
+
+    # Start the Chrome driver
     service = Service(chromedriver_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
+
     try:
-        driver.get("https://www.nasdaq.com/market-activity/pre-market")
-        time.sleep(2)
-        try:
-            most_advanced = driver.find_element(By.XPATH, "//button[text()='Most Advanced']")
-            most_advanced.click()
-            time.sleep(1)
-        except Exception:
-            pass
-        table = driver.find_element(By.XPATH, "/html/body/div[2]/div/main/div[2]/article/div[2]/div/div[3]/div[1]/div[3]/table")
-        rows = table.find_elements(By.XPATH, ".//tbody/tr")
+        # Open the pre-market gainers page
+        driver.get("https://stockanalysis.com/markets/premarket/gainers/")
+        time.sleep(2)  # Wait for page to load
+
+        # Locate the table and its rows
+        table = driver.find_element(By.XPATH, "//table[contains(@class, 'table')]//tbody")
+        rows = table.find_elements(By.TAG_NAME, "tr")
+
+        # Extract data from the top N rows
         data = []
         for row in rows[:num_rows]:
             try:
-                cells = row.find_elements(By.XPATH, ".//th | .//td")
-                row_data = []
-                for cell in cells:
-                    link = cell.find_elements(By.TAG_NAME, "a")
-                    if link:
-                        row_data.append(link[0].text.strip())
-                    else:
-                        row_data.append(cell.text.strip())
-                while len(row_data) < 5:
-                    row_data.append("")
-                data.append(row_data[:5])
+                cells = row.find_elements(By.TAG_NAME, "td")
+                row_data = [cell.text.strip() for cell in cells]
+                data.append(row_data)
             except Exception as e:
                 print(f"Error processing row: {e}")
                 continue
-        tickers = [row[0] for row in data if row and row[0]]
-        return tickers
+
+        # Create DataFrame for reference (optional)
+        # df = pd.DataFrame(data)  # Uncomment to debug
+
+        # Return a list of tuples: (ticker, premarket change, volume)
+        # Example row: [1, 'MOGU', 'MOGU Inc.', '193.60%', '7.34', '35,754,049', '38.99M']
+        # Ticker: index 1, Change: index 3, Volume: index 5
+        tuples = []
+        for row in data:
+            if len(row) > 5 and row[1] and row[3] and row[5]:
+                tuples.append((row[1], row[3], row[5]))
+        return tuples
     finally:
         driver.quit()
 
 # Example usage:
-# chromedriver_path = r"C:\\Users\\cleem\\Downloads\\chromedriver-win64\\chromedriver-win64\\chromedriver.exe"
-# tickers = get_top_premarket_tickers(chromedriver_path, num_rows=3, headless=True)
-# print(tickers)
+#chromedriver_path = r"C:\\Users\\cleem\\Downloads\\chromedriver-win64\\chromedriver-win64\\chromedriver.exe"
+#tickers = get_top_premarket_tickers(chromedriver_path, num_rows=5, headless=True)
+#print(tickers)
