@@ -1,3 +1,0 @@
-# requirements.txt
-# List of dependencies for the trading bot
-pandas
