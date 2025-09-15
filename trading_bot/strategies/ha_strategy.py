@@ -2,11 +2,11 @@
 Heikin Ashi momentum strategy implementation.
 Translates Pine Script logic to Python, inherits from BaseStrategy.
 """
+
 from .base_strategy import BaseStrategy
-
-
 import pandas as pd
 import numpy as np
+from indicators.ha_indicators import HeikinAshi
 
 class HAMomentumStrategy(BaseStrategy):
     """
@@ -17,20 +17,11 @@ class HAMomentumStrategy(BaseStrategy):
         self.config = config or {}
         self.strategy_params = strategy_params or {}
 
-    def heikin_ashi(self, df):
-        ha = pd.DataFrame(index=df.index)
-        ha['ha_close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
-        ha['ha_open'] = 0.0
-        ha['ha_open'].iloc[0] = (df['open'].iloc[0] + df['close'].iloc[0]) / 2
-        for i in range(1, len(df)):
-            ha['ha_open'].iloc[i] = (ha['ha_open'].iloc[i-1] + ha['ha_close'].iloc[i-1]) / 2
-        ha['ha_high'] = df[['high']].join(ha[['ha_open', 'ha_close']]).max(axis=1)
-        ha['ha_low'] = df[['low']].join(ha[['ha_open', 'ha_close']]).min(axis=1)
-        return ha
+
 
     def generate_signals(self, data):
         df = data.copy()
-        ha = self.heikin_ashi(df)
+        ha = HeikinAshi.calculate(df)
         df = df.join(ha)
 
         # === Basic signals
