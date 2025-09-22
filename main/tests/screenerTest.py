@@ -6,8 +6,8 @@ import pandas as pd
 screener_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'screener'))
 sys.path.append(screener_path)
 
-from main.src.screener.PMH import fetch_table_to_df as fetch_pmh
-from main.src.screener.RTH import fetch_table_to_df as fetch_rth
+from src.screener.PMH import fetch_table_to_df as fetch_pmh
+from src.screener.RTH import fetch_table_to_df as fetch_rth
 
 # Test PMH screener
 df_pmh = fetch_pmh()
