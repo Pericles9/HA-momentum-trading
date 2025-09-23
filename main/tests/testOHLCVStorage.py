@@ -32,15 +32,16 @@ def generate_sample_ohlcv_data(symbol: str, timeframe: str, days: int = 7):
     else:
         raise ValueError(f"Unsupported timeframe: {timeframe}")
     
-    start_time = datetime.utcnow() - timedelta(days=days)
+    # Generate recent data (last few hours instead of days ago)
+    start_time = datetime.utcnow() - timedelta(hours=days * 6)  # 6 hours per "day" of data
     current_time = start_time
     
     for _ in range(days * periods_per_day):
         # Generate realistic OHLCV data
-        open_price = base_price + random.uniform(-2, 2)
+        open_price = max(0.01, base_price + random.uniform(-2, 2))  # Ensure positive price
         high_price = open_price + random.uniform(0, 3)
-        low_price = open_price - random.uniform(0, 2)
-        close_price = low_price + random.uniform(0, high_price - low_price)
+        low_price = max(0.01, open_price - random.uniform(0, 2))  # Ensure positive price
+        close_price = max(0.01, low_price + random.uniform(0, high_price - low_price))
         volume = random.randint(10000, 1000000)
         
         # Simple technical indicators (in practice, use proper TA libraries)
@@ -100,7 +101,14 @@ def test_ohlcv_storage():
                     
                     if not df.empty:
                         print(f"Sample data for {symbol} {timeframe}:")
-                        print(df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].head(3))
+                        # Check actual column names and display accordingly
+                        available_cols = ['timestamp']
+                        price_cols = ['open_price', 'high_price', 'low_price', 'close_price'] 
+                        if all(col in df.columns for col in price_cols):
+                            available_cols.extend(price_cols)
+                        if 'volume' in df.columns:
+                            available_cols.append('volume')
+                        print(df[available_cols].head(3))
                         print()
     
     except Exception as e:

@@ -188,18 +188,21 @@ class DatabaseOperations:
             pd.DataFrame: OHLCV data
         """
         try:
+            from datetime import datetime, timedelta
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            
             query = text("""
                 SELECT * FROM ohlcv_data 
                 WHERE symbol = :symbol 
                 AND timeframe = :timeframe 
-                AND timestamp >= NOW() - INTERVAL :days DAY
+                AND timestamp >= :cutoff_date
                 ORDER BY timestamp DESC
             """)
             
             result = self.session.execute(query, {
                 'symbol': symbol,
                 'timeframe': timeframe,
-                'days': days
+                'cutoff_date': cutoff_date
             })
             
             columns = result.keys()

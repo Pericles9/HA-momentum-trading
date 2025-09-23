@@ -18,6 +18,9 @@ def test_screeners_with_database():
     """
     Test screeners and store results in database
     """
+    pmh_success = False
+    rth_success = False
+    
     print("🔍 Testing PMH screener...")
     try:
         df_pmh = fetch_pmh()
@@ -25,16 +28,24 @@ def test_screeners_with_database():
         print(f"Columns: {list(df_pmh.columns)}")
         print(f"Sample data:\n{df_pmh.head()}")
         
+        # Validate DataFrame
+        if df_pmh.empty:
+            print("⚠️ Warning: PMH screener returned empty DataFrame")
+            return False
+        
         # Store in database
         with DatabaseOperations() as db_ops:
             success = db_ops.insert_screener_results(df_pmh, 'PMH')
             if success:
                 print("✅ PMH results stored in database")
+                pmh_success = True
             else:
                 print("❌ Failed to store PMH results")
         
     except Exception as e:
         print(f"❌ PMH screener failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     print("\n" + "="*50)
     
@@ -45,16 +56,24 @@ def test_screeners_with_database():
         print(f"Columns: {list(df_rth.columns)}")
         print(f"Sample data:\n{df_rth.head()}")
         
+        # Validate DataFrame
+        if df_rth.empty:
+            print("⚠️ Warning: RTH screener returned empty DataFrame")
+            return False
+        
         # Store in database
         with DatabaseOperations() as db_ops:
             success = db_ops.insert_screener_results(df_rth, 'RTH')
             if success:
                 print("✅ RTH results stored in database")
+                rth_success = True
             else:
                 print("❌ Failed to store RTH results")
         
     except Exception as e:
         print(f"❌ RTH screener failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     print("\n" + "="*50)
     
@@ -78,6 +97,10 @@ def test_screeners_with_database():
         
     except Exception as e:
         print(f"❌ Database retrieval failed: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return pmh_success and rth_success
 
 
 if __name__ == "__main__":
@@ -85,6 +108,10 @@ if __name__ == "__main__":
     print("  Enhanced Screener Test with Database Storage")
     print("=" * 60)
     
-    test_screeners_with_database()
+    success = test_screeners_with_database()
     
-    print("\n🎉 Screener test with database storage completed!")
+    if success:
+        print("\n🎉 Screener test with database storage completed successfully!")
+    else:
+        print("\n❌ Some tests failed. Check the output above.")
+        sys.exit(1)
