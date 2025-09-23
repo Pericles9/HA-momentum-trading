@@ -2,12 +2,12 @@ import sys
 import os
 import pandas as pd
 
-# Add the screener directory to sys.path
+# Add the screener directory to sys.path to enable direct imports
 screener_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'screener'))
 sys.path.append(screener_path)
 
-from src.screener.PMH import fetch_table_to_df as fetch_pmh
-from src.screener.RTH import fetch_table_to_df as fetch_rth
+from PMH import fetch_table_to_df as fetch_pmh
+from RTH import fetch_table_to_df as fetch_rth
 
 # Test PMH screener
 df_pmh = fetch_pmh()

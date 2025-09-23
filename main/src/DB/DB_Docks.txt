@@ -1,0 +1,865 @@
+# TimescaleDB Documentation for HA-Momentum-Trading
+================================================================================
+
+## Table of Contents
+1. [Database Overview](#database-overview)
+2. [Installation & Setup](#installation--setup)
+3. [Configuration](#configuration)
+4. [Database Architecture](#database-architecture)
+5. [Module Documentation](#module-documentation)
+6. [Usage Examples](#usage-examples)
+7. [Troubleshooting](#troubleshooting)
+8. [Maintenance](#maintenance)
+
+================================================================================
+
+## Database Overview
+
+### What is TimescaleDB?
+TimescaleDB is a PostgreSQL extension optimized for time-series data. It's perfect for storing:
+- Stock screener results over time
+- OHLCV (Open, High, Low, Close, Volume) price data
+- Technical indicators
+- Trading signals
+
+### Why TimescaleDB for This Project?
+- **Time-series optimization**: Efficient storage and querying of time-based data
+- **PostgreSQL compatibility**: Uses familiar SQL syntax
+- **Automatic partitioning**: Data is automatically partitioned by time
+- **Compression**: Reduces storage space for historical data
+- **Fast queries**: Optimized for time-range queries
+
+================================================================================
+
+## Installation & Setup
+
+### Prerequisites
+- Docker Desktop installed and running
+- Python 3.11+ with virtual environment
+- Network access to localhost
+
+### Step 1: Install Required Python Packages
+```bash
+pip install psycopg2-binary sqlalchemy python-dotenv asyncpg
+```
+
+### Step 2: Start TimescaleDB Container
+```bash
+# IMPORTANT: Using port 5433 to avoid conflicts with local PostgreSQL
+docker run -d --name timescaledb -e POSTGRES_PASSWORD=password123 -p 5433:5432 timescale/timescaledb:latest-pg14
+```
+
+### Step 3: Create Database and Enable Extension
+```bash
+# Create the database
+docker exec -it timescaledb psql -U postgres -c "CREATE DATABASE momentum_trading;"
+
+# Enable TimescaleDB extension
+docker exec -it timescaledb psql -U postgres -d momentum_trading -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
+```
+
+### Step 4: Run Database Setup Script
+```bash
+python main/setup_database.py
+```
+
+================================================================================
+
+## Configuration
+
+### Environment Variables (.env file)
+```env
+# TimescaleDB Configuration
+DB_HOST=127.0.0.1          # Use IPv4 to avoid IPv6 issues
+DB_PORT=5433               # IMPORTANT: Port 5433 (not 5432) to avoid local PostgreSQL conflicts
+DB_NAME=momentum_trading   # Database name
+DB_USER=postgres           # Default PostgreSQL user
+DB_PASSWORD=password123    # Simple password (no special characters)
+
+# Connection Pool Settings
+DB_POOL_SIZE=10           # Number of connections in pool
+DB_MAX_OVERFLOW=20        # Maximum overflow connections
+```
+
+### Important Notes:
+- **Port 5433**: We use 5433 instead of 5432 to avoid conflicts with local PostgreSQL installations
+- **IPv4 Address**: Use 127.0.0.1 instead of localhost to avoid IPv6 connection issues
+- **Simple Password**: Avoid special characters that might cause URL encoding issues
+
+================================================================================
+
+## Database Architecture
+
+### Tables Overview
+
+#### 1. screener_results
+Stores stock screener results over time (PMH and RTH)
+```sql
+CREATE TABLE screener_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMPTZ NOT NULL,      -- When the screen was run
+    screener_type VARCHAR(10) NOT NULL,  -- 'PMH' or 'RTH'
+    symbol VARCHAR(10) NOT NULL,         -- Stock symbol (e.g., 'AAPL')
+    name VARCHAR(100),                   -- Company name
+    change_percent FLOAT,                -- Percentage change
+    price FLOAT,                         -- Current price
+    volume INTEGER,                      -- Trading volume
+    market_cap VARCHAR(20),              -- Market capitalization
+    rank INTEGER                         -- Position in screener results
+);
+```
+
+#### 2. ohlcv_data
+Stores OHLCV price data with technical indicators
+```sql
+CREATE TABLE ohlcv_data (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMPTZ NOT NULL,     -- Time of the price data
+    symbol VARCHAR(10) NOT NULL,        -- Stock symbol
+    timeframe VARCHAR(5) NOT NULL,      -- '1m', '10m', '1h', '1d', etc.
+    
+    -- OHLCV Data
+    open_price FLOAT NOT NULL,
+    high_price FLOAT NOT NULL,
+    low_price FLOAT NOT NULL,
+    close_price FLOAT NOT NULL,
+    volume INTEGER NOT NULL,
+    
+    -- Technical Indicators (optional)
+    sma_20 FLOAT,                       -- 20-period Simple Moving Average
+    sma_50 FLOAT,                       -- 50-period Simple Moving Average
+    ema_12 FLOAT,                       -- 12-period Exponential Moving Average
+    ema_26 FLOAT,                       -- 26-period Exponential Moving Average
+    rsi FLOAT,                          -- Relative Strength Index
+    macd FLOAT,                         -- MACD line
+    macd_signal FLOAT,                  -- MACD signal line
+    macd_histogram FLOAT,               -- MACD histogram
+    bollinger_upper FLOAT,              -- Bollinger Band upper
+    bollinger_middle FLOAT,             -- Bollinger Band middle
+    bollinger_lower FLOAT               -- Bollinger Band lower
+);
+```
+
+#### 3. trading_signals
+Stores trading signals generated from analysis
+```sql
+CREATE TABLE trading_signals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMPTZ NOT NULL,     -- When signal was generated
+    symbol VARCHAR(10) NOT NULL,        -- Stock symbol
+    signal_type VARCHAR(10) NOT NULL,   -- 'BUY', 'SELL', 'HOLD'
+    confidence FLOAT,                   -- Signal confidence (0.0 to 1.0)
+    strategy_name VARCHAR(50) NOT NULL, -- Name of strategy that generated signal
+    timeframe VARCHAR(5) NOT NULL,      -- Timeframe of analysis
+    entry_price FLOAT,                  -- Suggested entry price
+    stop_loss FLOAT,                    -- Stop loss price
+    take_profit FLOAT,                  -- Take profit price
+    notes TEXT                          -- Additional notes
+);
+```
+
+### Hypertables
+All tables are converted to TimescaleDB hypertables for time-series optimization:
+- Automatic partitioning by timestamp
+- Optimized for time-range queries
+- Better compression for older data
+
+### Indexes
+Optimized indexes for common query patterns:
+- `timestamp` - For time-range queries
+- `symbol` - For symbol-specific queries
+- `symbol + timestamp` - For symbol time-series queries
+- `screener_type` - For filtering PMH vs RTH results
+
+================================================================================
+
+## Module Documentation
+
+### 1. connection.py - Database Connection Management
+
+#### Purpose
+Handles all database connections, configuration, and SQLAlchemy setup.
+
+#### Key Components
+
+##### Database Configuration
+```python
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST', '127.0.0.1'),
+    'port': os.getenv('DB_PORT', '5433'),
+    'database': os.getenv('DB_NAME', 'momentum_trading'),
+    'username': os.getenv('DB_USER', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', 'password123'),
+    'pool_size': int(os.getenv('DB_POOL_SIZE', '10')),
+    'max_overflow': int(os.getenv('DB_MAX_OVERFLOW', '20'))
+}
+```
+
+##### SQLAlchemy Engine
+```python
+engine = create_engine(
+    DATABASE_URL,
+    poolclass=QueuePool,        # Connection pooling
+    pool_size=10,               # Number of persistent connections
+    max_overflow=20,            # Additional connections when needed
+    echo=False                  # Set to True for SQL logging
+)
+```
+
+##### Key Functions
+- `get_db()`: Dependency injection for database sessions
+- `create_tables()`: Creates all database tables
+- `test_connection()`: Tests database connectivity
+
+### 2. models.py - Database Table Definitions
+
+#### Purpose
+Defines SQLAlchemy ORM models for all database tables.
+
+#### Key Models
+
+##### ScreenerResult Model
+```python
+class ScreenerResult(Base):
+    __tablename__ = 'screener_results'
+    
+    # Primary key
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Time series key
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Screener data
+    screener_type = Column(String(10), nullable=False)  # 'PMH' or 'RTH'
+    symbol = Column(String(10), nullable=False)
+    # ... other columns
+```
+
+##### OHLCVData Model
+```python
+class OHLCVData(Base):
+    __tablename__ = 'ohlcv_data'
+    
+    # Time series partitioning key
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+    
+    # OHLCV data
+    open_price = Column(Float, nullable=False)
+    high_price = Column(Float, nullable=False)
+    # ... other OHLCV columns
+    
+    # Technical indicators (optional)
+    sma_20 = Column(Float)
+    rsi = Column(Float)
+    # ... other indicators
+```
+
+#### Index Strategy
+Each model includes optimized indexes:
+```python
+__table_args__ = (
+    Index('idx_screener_timestamp', 'timestamp'),
+    Index('idx_screener_symbol', 'symbol'),
+    Index('idx_screener_symbol_timestamp', 'symbol', 'timestamp'),
+)
+```
+
+### 3. operations.py - Database Operations
+
+#### Purpose
+Provides high-level database operations for inserting and querying data.
+
+#### Key Class: DatabaseOperations
+
+##### Context Manager Usage
+```python
+with DatabaseOperations() as db_ops:
+    # Database operations here
+    # Automatically handles session cleanup
+    pass
+```
+
+##### Core Methods
+
+###### setup_timescaledb()
+```python
+def setup_timescaledb(self):
+    """
+    Setup TimescaleDB hypertables for time-series data
+    - Creates TimescaleDB extension
+    - Converts tables to hypertables
+    - Enables automatic partitioning
+    """
+```
+
+###### insert_screener_results()
+```python
+def insert_screener_results(self, df: pd.DataFrame, screener_type: str) -> bool:
+    """
+    Insert screener results from DataFrame
+    
+    Args:
+        df: DataFrame with columns ['Symbol', 'Name', 'Change %', 'Price', 'Volume', 'Market Cap']
+        screener_type: 'PMH' or 'RTH'
+    
+    Returns:
+        bool: Success status
+    """
+```
+
+###### insert_ohlcv_data()
+```python
+def insert_ohlcv_data(self, symbol: str, timeframe: str, ohlcv_data: List[Dict]) -> bool:
+    """
+    Insert OHLCV data with indicators
+    
+    Args:
+        symbol: Stock symbol (e.g., 'AAPL')
+        timeframe: Time frame ('1m', '10m', etc.)
+        ohlcv_data: List of dictionaries with OHLCV and indicator data
+    
+    Expected dictionary format:
+    {
+        'timestamp': datetime,
+        'open': float,
+        'high': float,
+        'low': float,
+        'close': float,
+        'volume': int,
+        'sma_20': float (optional),
+        'rsi': float (optional),
+        # ... other indicators
+    }
+    """
+```
+
+###### get_latest_screener_results()
+```python
+def get_latest_screener_results(self, screener_type: str, limit: int = 100) -> pd.DataFrame:
+    """
+    Get latest screener results
+    
+    Args:
+        screener_type: 'PMH' or 'RTH'
+        limit: Number of results to return
+    
+    Returns:
+        pd.DataFrame: Screener results with columns:
+        ['timestamp', 'symbol', 'name', 'change_percent', 'price', 'volume', 'market_cap', 'rank']
+    """
+```
+
+###### get_ohlcv_data()
+```python
+def get_ohlcv_data(self, symbol: str, timeframe: str, days: int = 30) -> pd.DataFrame:
+    """
+    Get OHLCV data for a symbol
+    
+    Args:
+        symbol: Stock symbol
+        timeframe: Time frame ('1m', '10m', etc.)
+        days: Number of days to retrieve
+    
+    Returns:
+        pd.DataFrame: OHLCV data with all columns from ohlcv_data table
+    """
+```
+
+##### Utility Methods
+- `_safe_float()`: Safely converts strings to floats (handles %, $, commas)
+- `_safe_int()`: Safely converts strings to integers (handles commas)
+
+### 4. setup_database.py - Database Initialization
+
+#### Purpose
+One-time setup script to initialize the entire database system.
+
+#### What It Does
+1. **Tests Connection**: Verifies database connectivity
+2. **Creates Tables**: Creates all SQLAlchemy tables
+3. **Sets Up Hypertables**: Converts tables to TimescaleDB hypertables
+4. **Tests Operations**: Validates basic database operations
+
+#### Usage
+```bash
+python main/setup_database.py
+```
+
+#### Expected Output
+```
+==================================================
+  TimescaleDB Setup for Momentum Trading
+==================================================
+🚀 Starting TimescaleDB setup...
+📡 Testing database connection...
+✅ Database connection successful!
+📋 Creating database tables...
+✅ Tables created successfully!
+⚡ Setting up TimescaleDB hypertables...
+✅ TimescaleDB hypertables setup completed!
+🎉 Database setup completed successfully!
+```
+
+================================================================================
+
+## Usage Examples
+
+### 1. Basic Connection Test
+```python
+from src.DB.connection import test_connection
+
+if test_connection():
+    print("Database is ready!")
+else:
+    print("Database connection failed")
+```
+
+### 2. Storing Screener Results
+```python
+import pandas as pd
+from src.DB.operations import DatabaseOperations
+
+# Assuming you have a DataFrame from your screener
+df_pmh = pd.DataFrame({
+    'Symbol': ['AAPL', 'MSFT', 'GOOGL'],
+    'Name': ['Apple Inc.', 'Microsoft Corp.', 'Alphabet Inc.'],
+    'Change %': [2.5, 1.8, 3.2],
+    'Price': [150.00, 300.00, 2500.00],
+    'Volume': [1000000, 800000, 600000],
+    'Market Cap': ['2.5T', '2.3T', '1.7T']
+})
+
+with DatabaseOperations() as db_ops:
+    success = db_ops.insert_screener_results(df_pmh, 'PMH')
+    if success:
+        print("Screener results stored successfully!")
+```
+
+### 3. Storing OHLCV Data
+```python
+from datetime import datetime
+from src.DB.operations import DatabaseOperations
+
+# Sample OHLCV data
+ohlcv_data = [
+    {
+        'timestamp': datetime(2025, 9, 22, 9, 30),
+        'open': 150.00,
+        'high': 152.00,
+        'low': 149.00,
+        'close': 151.50,
+        'volume': 1000000,
+        'sma_20': 148.50,
+        'rsi': 65.2
+    },
+    # ... more data points
+]
+
+with DatabaseOperations() as db_ops:
+    success = db_ops.insert_ohlcv_data('AAPL', '1m', ohlcv_data)
+    if success:
+        print("OHLCV data stored successfully!")
+```
+
+### 4. Querying Data
+```python
+from src.DB.operations import DatabaseOperations
+
+with DatabaseOperations() as db_ops:
+    # Get latest PMH screener results
+    pmh_results = db_ops.get_latest_screener_results('PMH', limit=10)
+    print(f"Found {len(pmh_results)} PMH results")
+    
+    # Get OHLCV data for AAPL
+    aapl_data = db_ops.get_ohlcv_data('AAPL', '1m', days=7)
+    print(f"Found {len(aapl_data)} AAPL 1-minute bars")
+```
+
+### 5. Custom Queries with Raw SQL
+```python
+from src.DB.connection import SessionLocal
+from sqlalchemy import text
+
+with SessionLocal() as session:
+    # Custom query example
+    query = text("""
+        SELECT symbol, AVG(change_percent) as avg_change
+        FROM screener_results 
+        WHERE timestamp >= NOW() - INTERVAL '7 days'
+        AND screener_type = :screener_type
+        GROUP BY symbol
+        ORDER BY avg_change DESC
+        LIMIT 10
+    """)
+    
+    result = session.execute(query, {'screener_type': 'PMH'})
+    top_performers = result.fetchall()
+    
+    for row in top_performers:
+        print(f"{row.symbol}: {row.avg_change:.2f}%")
+```
+
+================================================================================
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### 1. Connection Failed: Password Authentication
+**Error**: `FATAL: password authentication failed for user "postgres"`
+
+**Solutions**:
+- Check `.env` file has correct password: `DB_PASSWORD=password123`
+- Verify Docker container is using same password:
+  ```bash
+  docker exec -it timescaledb env | findstr POSTGRES
+  ```
+- Restart container if password was changed:
+  ```bash
+  docker restart timescaledb
+  ```
+
+#### 2. Port Already in Use
+**Error**: `docker: Error response from daemon: port is already allocated`
+
+**Solutions**:
+- Check what's using port 5433:
+  ```bash
+  netstat -an | findstr :5433
+  ```
+- Stop conflicting service or use different port:
+  ```bash
+  docker run -d --name timescaledb -e POSTGRES_PASSWORD=password123 -p 5434:5432 timescale/timescaledb:latest-pg14
+  ```
+- Update `.env` file with new port
+
+#### 3. IPv6 Connection Issues
+**Error**: `connection to server at "localhost" (::1), port 5433 failed`
+
+**Solutions**:
+- Use IPv4 address in `.env`: `DB_HOST=127.0.0.1`
+- Never use `localhost` - always use `127.0.0.1`
+
+#### 4. Module Import Errors
+**Error**: `ModuleNotFoundError: No module named 'DB'`
+
+**Solutions**:
+- Check Python path in scripts:
+  ```python
+  sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+  ```
+- Run scripts from project root directory
+- Ensure `__init__.py` files exist in directories
+
+#### 5. Hypertable Creation Warnings
+**Warning**: `cannot create a unique index without the column "timestamp"`
+
+**Explanation**: This is normal! TimescaleDB requires timestamp in unique indexes.
+**Action**: No action needed - tables work perfectly despite warning.
+
+#### 6. Container Won't Start
+**Troubleshooting Steps**:
+```bash
+# Check container status
+docker ps -a
+
+# Check container logs
+docker logs timescaledb
+
+# Remove and recreate if needed
+docker stop timescaledb
+docker rm timescaledb
+docker run -d --name timescaledb -e POSTGRES_PASSWORD=password123 -p 5433:5432 timescale/timescaledb:latest-pg14
+```
+
+### Debugging Connection Issues
+
+#### Test Connection Manually
+```python
+import psycopg2
+
+try:
+    conn = psycopg2.connect(
+        host='127.0.0.1',
+        port='5433',
+        database='momentum_trading',
+        user='postgres',
+        password='password123'
+    )
+    print("✅ Direct connection successful!")
+    conn.close()
+except Exception as e:
+    print(f"❌ Direct connection failed: {e}")
+```
+
+#### Check Docker Container Health
+```bash
+# Check if container is running
+docker ps
+
+# Check container logs for errors
+docker logs timescaledb
+
+# Connect directly to container
+docker exec -it timescaledb psql -U postgres -d momentum_trading
+```
+
+================================================================================
+
+## Maintenance
+
+### Daily Operations
+
+#### Start/Stop Database
+```bash
+# Start TimescaleDB container
+docker start timescaledb
+
+# Stop TimescaleDB container
+docker stop timescaledb
+
+# Check status
+docker ps
+```
+
+#### Backup Database
+```bash
+# Create backup
+docker exec -t timescaledb pg_dump -U postgres momentum_trading > backup.sql
+
+# Restore backup
+docker exec -i timescaledb psql -U postgres momentum_trading < backup.sql
+```
+
+### Monitoring
+
+#### Check Database Size
+```sql
+SELECT 
+    schemaname,
+    tablename,
+    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size
+FROM pg_tables 
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+```
+
+#### Monitor Table Row Counts
+```sql
+SELECT 
+    'screener_results' as table_name,
+    COUNT(*) as row_count
+FROM screener_results
+
+UNION ALL
+
+SELECT 
+    'ohlcv_data' as table_name,
+    COUNT(*) as row_count
+FROM ohlcv_data
+
+UNION ALL
+
+SELECT 
+    'trading_signals' as table_name,
+    COUNT(*) as row_count
+FROM trading_signals;
+```
+
+#### Check Recent Data
+```sql
+-- Check latest screener results
+SELECT screener_type, COUNT(*), MAX(timestamp) as latest
+FROM screener_results 
+GROUP BY screener_type;
+
+-- Check OHLCV data summary
+SELECT symbol, timeframe, COUNT(*), MAX(timestamp) as latest
+FROM ohlcv_data 
+GROUP BY symbol, timeframe
+ORDER BY latest DESC;
+```
+
+### Performance Optimization
+
+#### Enable Compression (for older data)
+```sql
+-- Compress data older than 7 days
+SELECT add_compression_policy('screener_results', INTERVAL '7 days');
+SELECT add_compression_policy('ohlcv_data', INTERVAL '7 days');
+```
+
+#### Data Retention Policies
+```sql
+-- Keep screener results for 1 year
+SELECT add_retention_policy('screener_results', INTERVAL '1 year');
+
+-- Keep OHLCV data for 2 years
+SELECT add_retention_policy('ohlcv_data', INTERVAL '2 years');
+```
+
+#### Continuous Aggregates (for analytics)
+```sql
+-- Create hourly aggregates for OHLCV data
+CREATE MATERIALIZED VIEW ohlcv_hourly
+WITH (timescaledb.continuous) AS
+SELECT 
+    time_bucket('1 hour', timestamp) AS hour,
+    symbol,
+    first(open_price, timestamp) AS open,
+    max(high_price) AS high,
+    min(low_price) AS low,
+    last(close_price, timestamp) AS close,
+    sum(volume) AS volume
+FROM ohlcv_data
+GROUP BY hour, symbol;
+```
+
+### Security Best Practices
+
+#### Change Default Password
+```bash
+# In production, use a strong password
+docker run -d --name timescaledb -e POSTGRES_PASSWORD='YourStrongPasswordHere' -p 5433:5432 timescale/timescaledb:latest-pg14
+```
+
+#### Network Security
+- Use Docker networks to isolate database
+- Consider using SSL/TLS for connections
+- Restrict network access to database port
+
+#### Backup Strategy
+- Regular automated backups
+- Store backups securely
+- Test restore procedures
+
+================================================================================
+
+## Integration with Screeners
+
+### PMH (Pre-Market Hours) Screener Integration
+The PMH screener (`src/screener/PMH.py`) returns a DataFrame that's automatically compatible with the database:
+
+```python
+from src.screener.PMH import fetch_table_to_df
+from src.DB.operations import DatabaseOperations
+
+# Fetch PMH data
+df_pmh = fetch_table_to_df()
+
+# Store in database
+with DatabaseOperations() as db_ops:
+    success = db_ops.insert_screener_results(df_pmh, 'PMH')
+```
+
+### RTH (Regular Trading Hours) Screener Integration
+Similar integration for RTH screener:
+
+```python
+from src.screener.RTH import fetch_table_to_df
+from src.DB.operations import DatabaseOperations
+
+# Fetch RTH data
+df_rth = fetch_table_to_df()
+
+# Store in database
+with DatabaseOperations() as db_ops:
+    success = db_ops.insert_screener_results(df_rth, 'RTH')
+```
+
+### Automated Data Collection
+For continuous data collection, create a scheduler:
+
+```python
+import schedule
+import time
+from datetime import datetime
+from src.screener.PMH import fetch_table_to_df as fetch_pmh
+from src.screener.RTH import fetch_table_to_df as fetch_rth
+from src.DB.operations import DatabaseOperations
+
+def collect_pmh_data():
+    """Collect pre-market data"""
+    try:
+        df = fetch_pmh()
+        with DatabaseOperations() as db_ops:
+            db_ops.insert_screener_results(df, 'PMH')
+        print(f"PMH data collected at {datetime.now()}")
+    except Exception as e:
+        print(f"PMH collection failed: {e}")
+
+def collect_rth_data():
+    """Collect regular hours data"""
+    try:
+        df = fetch_rth()
+        with DatabaseOperations() as db_ops:
+            db_ops.insert_screener_results(df, 'RTH')
+        print(f"RTH data collected at {datetime.now()}")
+    except Exception as e:
+        print(f"RTH collection failed: {e}")
+
+# Schedule data collection
+schedule.every().day.at("08:00").do(collect_pmh_data)  # Pre-market
+schedule.every().day.at("09:30").do(collect_rth_data)  # Market open
+schedule.every().day.at("12:00").do(collect_rth_data)  # Midday
+schedule.every().day.at("15:30").do(collect_rth_data)  # Market close
+
+# Run scheduler
+while True:
+    schedule.run_pending()
+    time.sleep(60)
+```
+
+================================================================================
+
+## Future Enhancements
+
+### Planned Features
+1. **Real-time Data Streaming**: WebSocket integration for live data
+2. **Advanced Analytics**: Statistical functions and machine learning integration
+3. **API Layer**: REST API for external applications
+4. **Web Dashboard**: Real-time visualization dashboard
+5. **Alert System**: Price and volume-based alerts
+
+### Scaling Considerations
+- **Multi-node Setup**: TimescaleDB clustering for high availability
+- **Read Replicas**: Separate read queries from write operations
+- **Caching Layer**: Redis for frequently accessed data
+- **Load Balancing**: Distribute database connections
+
+================================================================================
+
+## Contact & Support
+
+### Getting Help
+1. Check this documentation first
+2. Review error logs in Docker container: `docker logs timescaledb`
+3. Test connections with provided debugging scripts
+4. Check TimescaleDB documentation: https://docs.timescale.com/
+
+### Quick Reference Commands
+```bash
+# Start database
+docker start timescaledb
+
+# Check database status
+docker ps | grep timescaledb
+
+# View logs
+docker logs timescaledb
+
+# Connect to database
+docker exec -it timescaledb psql -U postgres -d momentum_trading
+
+# Run tests
+python main/tests/screenerDatabaseTest.py
+
+# Setup database
+python main/setup_database.py
+```
+
+================================================================================
+
+This documentation covers everything you need to understand, maintain, and extend the TimescaleDB implementation for the HA-Momentum-Trading project. Keep this file updated as the system evolves!
+
+Last Updated: September 22, 2025

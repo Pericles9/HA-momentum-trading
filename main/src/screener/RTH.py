@@ -1,6 +1,7 @@
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 
 def fetch_table_to_df(url: str = "https://stockanalysis.com/markets/gainers/", table_xpath: str = '//*[@id="main-table"]/tbody') -> pd.DataFrame:
     """
@@ -11,7 +12,9 @@ def fetch_table_to_df(url: str = "https://stockanalysis.com/markets/gainers/", t
     Returns:
         pd.DataFrame: DataFrame containing table data.
     """
-    driver = webdriver.Chrome()
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    driver = webdriver.Chrome(options=chrome_options)
     driver.get(url)
     table = driver.find_element(By.XPATH, table_xpath)
     rows = table.find_elements(By.TAG_NAME, "tr")
