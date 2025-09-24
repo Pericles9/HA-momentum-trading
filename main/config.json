@@ -1,0 +1,17 @@
+{
+    "screening_interval_minutes": 1,
+    "max_watchlist_size": 50,
+    "min_volume_threshold": 1000000,
+    "historical_lookback_days": 1,
+    "data_interval": "1m",
+    "include_extended_hours": true,
+    "premarket_start": "04:00",
+    "premarket_end": "09:30",
+    "market_open": "09:30",
+    "market_close": "16:00",
+    "afterhours_end": "20:00",
+    "log_level": "INFO",
+    "console_output": true,
+    "paper_trading": true,
+    "max_position_size": 10000.0
+}

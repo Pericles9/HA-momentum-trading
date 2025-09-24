@@ -14,10 +14,10 @@ load_dotenv()
 # Database configuration
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432'),
+    'port': os.getenv('DB_PORT', '5433'),
     'database': os.getenv('DB_NAME', 'momentum_trading'),
     'username': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'password'),
+    'password': os.getenv('DB_PASSWORD', 'password123'),
     'pool_size': int(os.getenv('DB_POOL_SIZE', '10')),
     'max_overflow': int(os.getenv('DB_MAX_OVERFLOW', '20'))
 }

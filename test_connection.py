@@ -10,7 +10,7 @@ load_dotenv()
 # Test connection parameters
 params = {
     'host': '127.0.0.1',
-    'port': '5432',
+    'port': '5433',
     'database': 'momentum_trading',
     'user': 'postgres',
     'password': 'password123'

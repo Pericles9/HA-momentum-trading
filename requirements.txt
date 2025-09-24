@@ -9,6 +9,12 @@ sqlalchemy==2.0.23
 python-dotenv==1.0.0
 asyncpg==0.29.0
 
+# Docker container management
+docker==7.0.0
+
+# Task scheduling
+schedule==1.2.0
+
 # Technical analysis and financial data
 alpha-vantage==2.3.1
 yfinance==0.2.28
