@@ -53,6 +53,53 @@ class DatabaseOperations:
             self.session.rollback()
             print(f"TimescaleDB setup error: {e}")
     
+    def execute_query(self, query: str, params=None):
+        """
+        Execute a raw SQL query and return results
+        
+        Args:
+            query: SQL query string
+            params: Query parameters (tuple, list, or dict)
+            
+        Returns:
+            List of tuples with query results, or None if error
+        """
+        try:
+            if params:
+                # Handle different parameter styles
+                if isinstance(params, (tuple, list)):
+                    # Convert %s style to numbered parameters for SQLAlchemy
+                    if '%s' in query:
+                        # Replace %s with :1, :2, etc.
+                        param_dict = {}
+                        parts = query.split('%s')
+                        new_query = parts[0]
+                        for i, param in enumerate(params):
+                            param_name = f"param_{i}"
+                            param_dict[param_name] = param
+                            new_query += f":{param_name}"
+                            if i + 1 < len(parts):
+                                new_query += parts[i + 1]
+                        result = self.session.execute(text(new_query), param_dict)
+                    else:
+                        # Assume named parameters
+                        result = self.session.execute(text(query), dict(enumerate(params)))
+                else:
+                    # Dict parameters
+                    result = self.session.execute(text(query), params)
+            else:
+                result = self.session.execute(text(query))
+            
+            # Return all rows as list of tuples
+            return result.fetchall()
+            
+        except Exception as e:
+            print(f"Error executing query: {e}")
+            print(f"Query: {query}")
+            print(f"Params: {params}")
+            self.session.rollback()
+            return None
+    
     def insert_screener_results(self, df: pd.DataFrame, screener_type: str) -> bool:
         """
         Insert screener results from DataFrame

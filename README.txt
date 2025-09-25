@@ -40,7 +40,7 @@ main/
 
 ### 1. Setup Environment
 launch venv:
-.\.venv\Scripts\Activate.ps1
+
 
 ### 2. Start System (Database Auto-Start)
 cd main
@@ -207,7 +207,57 @@ python screenerTest.py                # Test screener functionality
 - ✅ Screener automation testing
 - ✅ Historical data backfill testing
 
-## 📊 DATABASES & APIs
+## � CHART VIEWER
+
+### 🕯️ Candlestick Chart Viewer GUI
+A modern desktop application for visualizing your OHLCV data as professional candlestick charts.
+
+**Location**: `main/chart_viewer.py`
+
+### Features:
+- 🔍 **Search Tickers**: Type any symbol to search
+- 📋 **Browse List**: View all available tickers with record counts
+- 📈 **Professional Charts**: Beautiful candlestick charts with volume
+- 📅 **Date Ranges**: 1, 2, 3, 7, 14, or 30 days back
+- 🔄 **Real-time Refresh**: Update charts with latest data
+- 🌙 **Dark Theme**: Modern dark UI design
+- 📊 **Volume Display**: Separate volume chart below price
+
+### Quick Start:
+```bash
+# Install chart dependencies:
+cd main
+pip install -r chart_requirements.txt
+
+# Test the setup:
+python test_chart_viewer.py
+
+# Launch the GUI:
+python chart_viewer.py
+
+# Or use the launcher (Windows):
+launch_chart_viewer.bat
+```
+
+### Chart Dependencies:
+```bash
+pip install matplotlib>=3.7.0
+pip install mplfinance>=0.12.0  # For professional candlestick charts
+pip install numpy>=1.24.0
+```
+
+### Usage:
+1. **Search**: Type ticker symbol (e.g., "AAPL") and press Enter
+2. **Browse**: Double-click any ticker from the list
+3. **Date Range**: Select how many days back to display
+4. **Refresh**: Click refresh to update with latest data
+
+### Screenshots:
+- Left Panel: Ticker search, list, and controls
+- Right Panel: Interactive candlestick chart with volume
+- Info Display: Shows current selection details
+
+## �📊 DATABASES & APIs
 
 ### TimescaleDB (PostgreSQL Extension):
 - Host: localhost:5433
@@ -238,6 +288,17 @@ Key packages (installed in venv):
 - sqlalchemy: Database ORM
 - psycopg2: PostgreSQL adapter
 - selenium: Web scraping for screeners
+- webdriver-manager: Automatic Chrome driver management
+- schedule: Task scheduling
+- docker: Container management for auto-database startup
+- tvdatafeed: Market data (installed from GitHub)
+- python-dotenv: Environment variables
+
+### Chart Viewer Additional Dependencies:
+- matplotlib: Chart plotting and visualization
+- mplfinance: Professional candlestick charts
+- numpy: Numerical operations for charts
+- tkinter: GUI framework (usually included with Python)
 - webdriver-manager: Automatic Chrome driver management
 - schedule: Task scheduling
 - docker: Container management for auto-database startup

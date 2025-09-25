@@ -1,0 +1,12 @@
+# Additional requirements for Chart Viewer
+# Install these packages in your virtual environment:
+# pip install -r chart_requirements.txt
+
+matplotlib>=3.7.0
+mplfinance>=0.12.0
+numpy>=1.24.0
+
+# These should already be installed from your main requirements:
+# pandas
+# psycopg2
+# sqlalchemy
