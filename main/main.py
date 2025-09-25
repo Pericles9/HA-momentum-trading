@@ -41,6 +41,7 @@ sys.path.insert(0, src_path)
 from src.screener.PMH import fetch_table_to_df as pmh_screen
 from src.screener.RTH import fetch_table_to_df as rth_screen
 from src.ingestion.hist import HistoricalDataIngestion
+from src.ingestion.live import LiveDataIngestion, LiveDataConfig, create_live_data_manager
 from src.DB.connection import test_connection
 from src.DB.operations import DatabaseOperations
 
@@ -249,6 +250,11 @@ class SystemConfig:
     paper_trading: bool = True
     max_position_size: float = 10000.0
     
+    # Live data settings
+    live_data_enabled: bool = True
+    live_update_interval: int = 5  # seconds
+    live_data_batch_size: int = 25  # max symbols for live streaming
+    
     def save_to_file(self, filepath: str = "config.json"):
         """Save configuration to JSON file"""
         config_dict = {
@@ -266,7 +272,10 @@ class SystemConfig:
             'log_level': self.log_level,
             'console_output': self.console_output,
             'paper_trading': self.paper_trading,
-            'max_position_size': self.max_position_size
+            'max_position_size': self.max_position_size,
+            'live_data_enabled': self.live_data_enabled,
+            'live_update_interval': self.live_update_interval,
+            'live_data_batch_size': self.live_data_batch_size
         }
         
         with open(filepath, 'w') as f:
@@ -325,6 +334,7 @@ class MomentumTradingSystem:
         # Components
         self.historical_ingestion = None
         self.db_ops = None
+        self.live_data_manager = None
         
         # State management
         self.current_watchlist: Set[str] = set()
@@ -361,9 +371,29 @@ class MomentumTradingSystem:
             self.db_ops = DatabaseOperations()
             logger.info("✅ Database operations initialized")
             
+            # Initialize live data manager if enabled
+            if self.config.live_data_enabled:
+                live_config = LiveDataConfig(
+                    update_interval=self.config.live_update_interval,
+                    batch_size=self.config.live_data_batch_size,
+                    enable_extended_hours=self.config.include_extended_hours
+                )
+                
+                self.live_data_manager = create_live_data_manager(
+                    watchlist_callback=self.get_current_watchlist,
+                    config=live_config
+                )
+                logger.info("✅ Live data manager initialized")
+            else:
+                logger.info("ℹ️ Live data collection disabled in configuration")
+            
         except Exception as e:
             logger.error(f"❌ Component initialization failed: {e}")
             raise
+    
+    def get_current_watchlist(self) -> Set[str]:
+        """Get current watchlist (used by live data manager)"""
+        return self.current_watchlist.copy()
     
     def get_current_market_state(self) -> str:
         """
@@ -558,10 +588,14 @@ class MomentumTradingSystem:
     
     def start_live_data_collection(self):
         """Start live data collection for watchlist symbols"""
-        # Note: This is a placeholder for live data collection
-        # You would implement this using TvDatafeedLive or similar
-        logger.info("📡 Live data collection would start here")
-        logger.info("💡 TvDatafeedLive integration coming in next phase")
+        if self.live_data_manager and self.config.live_data_enabled:
+            success = self.live_data_manager.start()
+            if success:
+                logger.info("📡 Live data collection started")
+            else:
+                logger.error("❌ Failed to start live data collection")
+        else:
+            logger.info("💡 Live data collection disabled or not available")
     
     def start_system(self):
         """Start the momentum trading system"""
@@ -618,6 +652,10 @@ class MomentumTradingSystem:
         if self.db_ops:
             self.db_ops.session.close()
         
+        # Stop live data collection
+        if self.live_data_manager:
+            self.live_data_manager.stop()
+        
         logger.info("✅ System stopped successfully")
     
     def get_system_status(self) -> Dict:
@@ -636,7 +674,8 @@ class MomentumTradingSystem:
             'components_initialized': {
                 'screeners': True,  # Functions are always available
                 'historical_ingestion': self.historical_ingestion is not None and self.historical_ingestion.initialized,
-                'database': self.db_ops is not None
+                'database': self.db_ops is not None,
+                'live_data': self.live_data_manager is not None and self.live_data_manager.initialized if self.config.live_data_enabled else False
             }
         }
     
@@ -722,6 +761,9 @@ def print_help():
     print("  save            - Save current config to file")
     print("  db              - Check database status")
     print("  restart-db      - Restart TimescaleDB container")
+    print("  live            - Show live data status")
+    print("  start-live      - Start live data collection")
+    print("  stop-live       - Stop live data collection")
     print("  help            - Show this help")
     print("  quit/exit       - Stop the system")
     print("="*60)
@@ -860,6 +902,15 @@ class ConsoleInterface:
                 
             elif cmd == 'restart-db':
                 self._restart_database()
+                
+            elif cmd == 'live':
+                self._show_live_data_status()
+                
+            elif cmd == 'start-live':
+                self._start_live_data()
+                
+            elif cmd == 'stop-live':
+                self._stop_live_data()
                 
             else:
                 print(f"❓ Unknown command: '{command}'. Type 'help' for available commands.")
@@ -1003,6 +1054,70 @@ class ConsoleInterface:
             print(f"  ❌ Error restarting database: {e}")
         
         print()
+    
+    def _show_live_data_status(self):
+        """Show live data collection status"""
+        print("\n📡 Live Data Status")
+        print("="*40)
+        
+        if not self.system.live_data_manager:
+            print("  Status: ❌ Not initialized")
+            print("  Reason: Live data disabled in configuration")
+            return
+        
+        stats = self.system.live_data_manager.get_stats()
+        
+        print(f"  Status: {'✅ Running' if stats['is_running'] else '❌ Stopped'}")
+        print(f"  Initialized: {'✅ Yes' if stats['initialized'] else '❌ No'}")
+        print(f"  Active Streams: {stats['streams_active']}")
+        print(f"  Total Updates: {stats['total_updates']}")
+        print(f"  Last Update: {stats['last_update'] or 'Never'}")
+        print(f"  Update Interval: {stats['config']['update_interval']} seconds")
+        print(f"  Max Batch Size: {stats['config']['batch_size']}")
+        print(f"  Extended Hours: {stats['config']['extended_hours']}")
+        
+        if 'symbols' in stats and stats['symbols']:
+            symbols = stats['symbols'][:10]  # Show first 10
+            remaining = len(stats['symbols']) - 10
+            print(f"  Active Symbols: {', '.join(symbols)}")
+            if remaining > 0:
+                print(f"                  (+{remaining} more)")
+        else:
+            print("  Active Symbols: None")
+        
+        print()
+    
+    def _start_live_data(self):
+        """Start live data collection"""
+        if not self.system.live_data_manager:
+            print("❌ Live data manager not available")
+            return
+        
+        if self.system.live_data_manager.is_running:
+            print("ℹ️ Live data collection is already running")
+            return
+        
+        print("🚀 Starting live data collection...")
+        success = self.system.live_data_manager.start()
+        
+        if success:
+            print("✅ Live data collection started")
+        else:
+            print("❌ Failed to start live data collection")
+    
+    def _stop_live_data(self):
+        """Stop live data collection"""
+        if not self.system.live_data_manager:
+            print("❌ Live data manager not available")
+            return
+        
+        if not self.system.live_data_manager.is_running:
+            print("ℹ️ Live data collection is not running")
+            return
+        
+        print("🛑 Stopping live data collection...")
+        self.system.live_data_manager.stop()
+        print("✅ Live data collection stopped")
 
 
 def main():

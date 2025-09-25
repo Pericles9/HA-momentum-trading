@@ -214,6 +214,69 @@ class DatabaseOperations:
             print(f"Error getting OHLCV data: {e}")
             return pd.DataFrame()
     
+    def get_latest_ohlcv_data(self, symbol: str, limit: int = 1) -> pd.DataFrame:
+        """
+        Get the latest OHLCV data for a symbol
+        
+        Args:
+            symbol: Stock symbol
+            limit: Number of latest records to retrieve
+        
+        Returns:
+            pd.DataFrame: Latest OHLCV data with timestamp as index
+        """
+        try:
+            query = text("""
+                SELECT timestamp, open_price as open, high_price as high, low_price as low, close_price as close, volume, symbol, timeframe
+                FROM ohlcv_data 
+                WHERE symbol = :symbol 
+                ORDER BY timestamp DESC
+                LIMIT :limit
+            """)
+            
+            result = self.session.execute(query, {
+                'symbol': symbol,
+                'limit': limit
+            })
+            
+            columns = result.keys()
+            data = [dict(zip(columns, row)) for row in result.fetchall()]
+            
+            if data:
+                df = pd.DataFrame(data)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+                return df.sort_index()
+            
+            return pd.DataFrame()
+            
+        except Exception as e:
+            print(f"Error getting latest OHLCV data: {e}")
+            return pd.DataFrame()
+    
+    def cleanup_old_live_data(self, cutoff_time: datetime):
+        """
+        Clean up old live data to manage storage
+        
+        Args:
+            cutoff_time: Delete data older than this timestamp
+        """
+        try:
+            query = text("""
+                DELETE FROM ohlcv_data 
+                WHERE timestamp < :cutoff_time
+                AND ingestion_timestamp IS NOT NULL
+            """)
+            
+            result = self.session.execute(query, {'cutoff_time': cutoff_time})
+            self.session.commit()
+            
+            print(f"Cleaned up {result.rowcount} old live data records")
+            
+        except Exception as e:
+            print(f"Error cleaning up old data: {e}")
+            self.session.rollback()
+    
     @staticmethod
     def _safe_float(value) -> Optional[float]:
         """Convert value to float safely"""

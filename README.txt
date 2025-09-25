@@ -1,11 +1,15 @@
 ================================================================================
   🎯 HA MOMENTUM TRADING SYSTEM
 ================================================================================
-  📊 Dynamic Screening & Watchlist Management
+  📊 Dynamic Screening & Watchlist4. Use '--console-only' mode for testing and setup
+5. Monitor live data streams with 'live' command
+6. Adjust live data settings for optimal performance
+7. Use 'stop-live'/'start-live' to manage streaming during high volatilityManagement
   📈 Historical Data Ingestion with Extended Hours
-  📡 Live Data Collection (Coming Soon)
+  📡 Live Data Collection with TvDatafeed
   🎮 Interactive Console Interface
   ⚙️ Runtime Configuration Management
+  🐳 Automatic Database Management
 ================================================================================
 
 ## 📁 PROJECT STRUCTURE
@@ -81,6 +85,11 @@ docker run -d --name timescaledb -e POSTGRES_PASSWORD=password123 -p 5433:5432 t
 - db              - Check database and Docker status
 - restart-db      - Restart TimescaleDB container
 
+### Live Data Management:
+- live            - Show live data streaming status
+- start-live      - Start live data collection
+- stop-live       - Stop live data collection
+
 ### Help:
 - help            - Show all available commands
 
@@ -89,6 +98,9 @@ set screening_interval_minutes=2      # Screen every 2 minutes instead of 1
 set max_watchlist_size=25             # Limit watchlist to 25 stocks
 set historical_lookback_days=2        # Get 2 days of historical data
 set log_level=DEBUG                   # More detailed logging
+set live_data_enabled=false          # Disable live data collection
+set live_update_interval=10           # Update live data every 10 seconds
+set live_data_batch_size=15           # Limit to 15 symbols for live streaming
 
 ## 🚀 STARTUP OPTIONS
 
@@ -126,7 +138,10 @@ The system automatically creates and manages a config.json file with the followi
     "log_level": "INFO",                    # Logging level
     "console_output": true,                 # Console logging
     "paper_trading": true,                  # Paper trading mode
-    "max_position_size": 10000.0            # Max position size
+    "max_position_size": 10000.0,           # Max position size
+    "live_data_enabled": true,              # Enable live data streaming
+    "live_update_interval": 5,              # Live data update interval (seconds)
+    "live_data_batch_size": 25              # Max symbols for live streaming
 }
 
 ## 🔄 SYSTEM WORKFLOW
@@ -141,8 +156,11 @@ The system automatically creates and manages a config.json file with the followi
 1. System screens stocks every minute (configurable)
 2. Updates watchlist with new momentum stocks
 3. Fetches historical 1-minute data (back to 4am previous day) for new symbols
-4. Stores all data in TimescaleDB with extended hours included
-5. Logs all activities with timestamps
+4. ⚡ NEW: Starts live data streams for all watchlist symbols
+5. Streams real-time 1-minute OHLCV data with extended hours
+6. Automatically stops streams for symbols removed from watchlist
+7. Stores all data in TimescaleDB with timestamps and indicators
+8. Manages connection health and reconnections automatically
 
 ### Database Schema:
 - screener_results: Stores screening results and criteria
@@ -151,12 +169,43 @@ The system automatically creates and manages a config.json file with the followi
 
 ## 🧪 TESTING
 
-Run individual tests:
-cd tests
-python testTvDatafeed.py              # Test TvDatafeed connection
-python testHistoricalIngestion.py     # Test historical data ingestion
-python testOHLCVStorage.py           # Test database storage
-python screenerTest.py               # Test screener functionality
+### Test Scripts Location: `main/tests/`
+
+### Core System Tests:
+- `screenerTest.py` - Tests PMH/RTH screeners with Selenium
+- `screenerDatabaseTest.py` - Tests screener database operations
+- `testHistoricalIngestion.py` - Tests historical data ingestion
+- `testLiveDataIngestion.py` - Tests live data ingestion system
+- `testOHLCVStorage.py` - Tests OHLCV data storage
+- `testAlphaVantage.py` - Tests Alpha Vantage integration
+- `testTvDatafeed.py` - Tests TvDatafeed integration
+
+### Live Data Streaming Tests:
+- `robustLiveStreamTest.py` - **Main live stream test** (30 second stream with error handling)
+- `testStandaloneLiveStream.py` - Comprehensive 60 second test (standalone)
+- `quickTvTest.py` - Quick TvDatafeed connection test
+
+### Running Tests:
+```bash
+cd main/tests
+
+# Quick tests:
+python quickTvTest.py                  # Test TvDatafeed connection
+python robustLiveStreamTest.py         # Test live streaming (30s)
+
+# Full system tests:
+python testLiveDataIngestion.py        # Test live data streaming system
+python testHistoricalIngestion.py      # Test historical data ingestion
+python testOHLCVStorage.py            # Test database storage
+python screenerTest.py                # Test screener functionality
+```
+
+### Test Features:
+- ✅ Works outside regular trading hours (extended session data)
+- ✅ Real-time data streaming with connection error handling
+- ✅ Database integration testing
+- ✅ Screener automation testing
+- ✅ Historical data backfill testing
 
 ## 📊 DATABASES & APIs
 
@@ -197,12 +246,13 @@ Key packages (installed in venv):
 
 ## 🚧 UPCOMING FEATURES
 
-- Live data collection with TvDatafeedLive
-- Trading signal generation
-- Position management
-- Real-time alerts
+- Advanced trading signal generation
+- Position management and portfolio tracking
+- Real-time alerts and notifications
 - Web dashboard interface
-- Strategy backtesting
+- Strategy backtesting framework
+- Multi-timeframe analysis
+- Risk management tools
 
 ## 💡 USAGE TIPS
 

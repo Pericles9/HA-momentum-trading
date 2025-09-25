@@ -13,5 +13,8 @@
     "log_level": "INFO",
     "console_output": true,
     "paper_trading": true,
-    "max_position_size": 10000.0
+    "max_position_size": 10000.0,
+    "live_data_enabled": true,
+    "live_update_interval": 5,
+    "live_data_batch_size": 25
 }
